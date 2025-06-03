@@ -38,6 +38,7 @@ export type Database = {
           location: string
           notes: string | null
           profit: number | null
+          stakes: string | null
           user_id: string | null
         }
         Insert: {
@@ -50,6 +51,7 @@ export type Database = {
           location: string
           notes?: string | null
           profit?: number | null
+          stakes?: string | null
           user_id?: string | null
         }
         Update: {
@@ -62,6 +64,7 @@ export type Database = {
           location?: string
           notes?: string | null
           profit?: number | null
+          stakes?: string | null
           user_id?: string | null
         }
         Relationships: []

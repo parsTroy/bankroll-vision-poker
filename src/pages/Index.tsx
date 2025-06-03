@@ -1,14 +1,14 @@
-
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Plus, TrendingUp, Target, LogOut, Spade } from 'lucide-react';
+import { Plus, TrendingUp, Target, LogOut, Spade, UserCheck, Upload } from 'lucide-react';
 import SessionForm from '@/components/SessionForm';
 import SessionList from '@/components/SessionList';
 import Analytics from '@/components/Analytics';
 import BankrollSetup from '@/components/BankrollSetup';
 import Auth from '@/components/Auth';
+import GuestWelcome from '@/components/GuestWelcome';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
@@ -38,15 +38,46 @@ const Index = () => {
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showBankrollSetup, setShowBankrollSetup] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
+  const [showGuestWelcome, setShowGuestWelcome] = useState(false);
   const { toast } = useToast();
 
-  // Load user data when authenticated
+  // Load user data when authenticated or guest data from localStorage
   useEffect(() => {
     if (user) {
       loadUserData();
+    } else if (isGuest) {
+      loadGuestData();
     }
-  }, [user]);
+  }, [user, isGuest]);
+
+  const loadGuestData = () => {
+    try {
+      const guestSessions = localStorage.getItem('guest_sessions');
+      const guestBankroll = localStorage.getItem('guest_bankroll');
+
+      if (guestSessions) {
+        setSessions(JSON.parse(guestSessions));
+      }
+
+      if (guestBankroll) {
+        setBankroll(JSON.parse(guestBankroll));
+      }
+    } catch (error) {
+      console.error('Error loading guest data:', error);
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  const saveGuestData = (updatedSessions: Session[], updatedBankroll?: BankrollData) => {
+    localStorage.setItem('guest_sessions', JSON.stringify(updatedSessions));
+    if (updatedBankroll) {
+      localStorage.setItem('guest_bankroll', JSON.stringify(updatedBankroll));
+    }
+  };
 
   const loadUserData = async () => {
     try {
@@ -105,67 +136,160 @@ const Index = () => {
     }
   };
 
-  const addSession = async (sessionData: Omit<Session, 'id' | 'profit'>) => {
+  const migrateGuestDataToAccount = async () => {
+    if (!user) return;
+
     try {
-      const profit = sessionData.cashOut - sessionData.buyIn;
-      
-      const { data, error } = await supabase
-        .from('sessions')
-        .insert({
-          user_id: user?.id,
-          date: sessionData.date,
-          game_type: sessionData.gameType,
-          stakes: sessionData.stakes,
-          location: sessionData.location,
-          buy_in: sessionData.buyIn,
-          cash_out: sessionData.cashOut,
-          profit: profit,
-          notes: sessionData.notes
-        })
-        .select()
-        .single();
+      const guestSessions = localStorage.getItem('guest_sessions');
+      const guestBankroll = localStorage.getItem('guest_bankroll');
 
-      if (error) throw error;
-
-      // Add to local state
-      const newSession: Session = {
-        id: data.id,
-        date: data.date,
-        gameType: data.game_type,
-        stakes: data.stakes || '',
-        location: data.location,
-        buyIn: data.buy_in,
-        cashOut: data.cash_out || 0,
-        profit: data.profit || 0,
-        notes: data.notes || ''
-      };
-
-      setSessions(prev => [newSession, ...prev]);
-
-      // Update bankroll
-      if (bankroll) {
-        const updatedBankroll = {
-          ...bankroll,
-          currentAmount: bankroll.currentAmount + profit
-        };
-        setBankroll(updatedBankroll);
+      if (guestSessions) {
+        const sessions = JSON.parse(guestSessions);
+        
+        for (const session of sessions) {
+          await supabase
+            .from('sessions')
+            .insert({
+              user_id: user.id,
+              date: session.date,
+              game_type: session.gameType,
+              stakes: session.stakes,
+              location: session.location,
+              buy_in: session.buyIn,
+              cash_out: session.cashOut,
+              profit: session.profit,
+              notes: session.notes
+            });
+        }
       }
 
-      setShowSessionForm(false);
+      if (guestBankroll) {
+        const bankrollData = JSON.parse(guestBankroll);
+        await supabase
+          .from('profiles')
+          .update({
+            starting_bankroll: bankrollData.startingAmount,
+            bankroll_goal: bankrollData.goalAmount
+          })
+          .eq('id', user.id);
+      }
+
+      // Clear guest data
+      localStorage.removeItem('guest_sessions');
+      localStorage.removeItem('guest_bankroll');
+      
+      setIsGuest(false);
+      
       toast({
-        title: "Session added!",
-        description: `${profit >= 0 ? 'Profit' : 'Loss'}: $${Math.abs(profit)}`
+        title: "Data migrated!",
+        description: "Your guest data has been saved to your account"
       });
+
+      // Reload user data
+      loadUserData();
     } catch (error: any) {
       toast({
-        title: "Error adding session",
+        title: "Error migrating data",
         description: error.message,
         variant: "destructive"
       });
     }
   };
 
+  const addSession = async (sessionData: Omit<Session, 'id' | 'profit'>) => {
+    const profit = sessionData.cashOut - sessionData.buyIn;
+    const newSession: Session = {
+      id: crypto.randomUUID(),
+      ...sessionData,
+      profit
+    };
+
+    if (isGuest) {
+      // Handle guest mode
+      const updatedSessions = [newSession, ...sessions];
+      setSessions(updatedSessions);
+
+      if (bankroll) {
+        const updatedBankroll = {
+          ...bankroll,
+          currentAmount: bankroll.currentAmount + profit
+        };
+        setBankroll(updatedBankroll);
+        saveGuestData(updatedSessions, updatedBankroll);
+      } else {
+        saveGuestData(updatedSessions);
+      }
+    } else {
+      // Handle authenticated user
+      try {
+        const { data, error } = await supabase
+          .from('sessions')
+          .insert({
+            user_id: user?.id,
+            date: sessionData.date,
+            game_type: sessionData.gameType,
+            stakes: sessionData.stakes,
+            location: sessionData.location,
+            buy_in: sessionData.buyIn,
+            cash_out: sessionData.cashOut,
+            profit: profit,
+            notes: sessionData.notes
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+
+        const transformedSession: Session = {
+          id: data.id,
+          date: data.date,
+          gameType: data.game_type as 'cash' | 'tournament',
+          stakes: data.stakes || '',
+          location: data.location,
+          buyIn: data.buy_in,
+          cashOut: data.cash_out || 0,
+          profit: data.profit || 0,
+          notes: data.notes || ''
+        };
+
+        setSessions(prev => [transformedSession, ...prev]);
+
+        if (bankroll) {
+          const updatedBankroll = {
+            ...bankroll,
+            currentAmount: bankroll.currentAmount + profit
+          };
+          setBankroll(updatedBankroll);
+        }
+      } catch (error: any) {
+        toast({
+          title: "Error adding session",
+          description: error.message,
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
+    setShowSessionForm(false);
+    toast({
+      title: "Session added!",
+      description: `${profit >= 0 ? 'Profit' : 'Loss'}: $${Math.abs(profit)}`
+    });
+  };
+
   const setupBankroll = async (data: BankrollData) => {
+    if (isGuest) {
+      setBankroll(data);
+      setShowBankrollSetup(false);
+      saveGuestData(sessions, data);
+      toast({
+        title: "Bankroll updated!",
+        description: "Your bankroll settings have been saved locally"
+      });
+      return;
+    }
+
     try {
       const { error } = await supabase
         .from('profiles')
@@ -196,10 +320,22 @@ const Index = () => {
     await signOut();
     setSessions([]);
     setBankroll(null);
+    setIsGuest(false);
     toast({
       title: "Signed out",
       description: "Come back soon!"
     });
+  };
+
+  const startGuestMode = () => {
+    setIsGuest(true);
+    setShowGuestWelcome(true);
+    setLoadingData(false);
+  };
+
+  const continueAsGuest = () => {
+    setShowGuestWelcome(false);
+    loadGuestData();
   };
 
   // Show loading while checking auth
@@ -211,9 +347,54 @@ const Index = () => {
     );
   }
 
-  // Show auth if not logged in
-  if (!user) {
-    return <Auth onAuthSuccess={() => {}} />;
+  // Show guest welcome screen
+  if (showGuestWelcome) {
+    return <GuestWelcome onContinue={continueAsGuest} onSignUp={() => setShowAuth(true)} />;
+  }
+
+  // Show auth if not logged in and not guest
+  if (!user && !isGuest) {
+    if (showAuth) {
+      return <Auth onAuthSuccess={migrateGuestDataToAccount} />;
+    }
+    
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4 flex items-center justify-center">
+        <div className="max-w-md w-full">
+          <Card className="p-6 bg-slate-800 border-slate-700">
+            <div className="text-center mb-6">
+              <div className="mx-auto w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mb-4">
+                <Spade className="h-8 w-8 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-white mb-2">Seven Deuce</h1>
+              <p className="text-slate-400">Track your live poker journey</p>
+            </div>
+
+            <div className="space-y-3">
+              <Button 
+                onClick={() => setShowAuth(true)}
+                className="w-full bg-red-600 hover:bg-red-700 text-white py-3 text-lg font-semibold"
+              >
+                <UserCheck className="h-5 w-5 mr-2" />
+                Sign In / Sign Up
+              </Button>
+              
+              <Button 
+                onClick={startGuestMode}
+                variant="outline"
+                className="w-full border-slate-600 text-slate-300 hover:bg-slate-700 py-3"
+              >
+                Try as Guest
+              </Button>
+            </div>
+
+            <div className="mt-4 text-center text-xs text-slate-500">
+              Guest mode saves data locally. Create an account to keep your data permanently.
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   const totalProfit = sessions.reduce((sum, session) => sum + session.profit, 0);
@@ -246,6 +427,27 @@ const Index = () => {
             <h1 className="text-3xl font-bold text-white">Seven Deuce</h1>
           </div>
           <p className="text-slate-400">Track your live poker journey</p>
+          
+          {/* Guest mode banner */}
+          {isGuest && (
+            <div className="mt-3 p-3 bg-yellow-900/50 border border-yellow-600 rounded-lg">
+              <div className="flex items-center justify-between">
+                <div className="text-left">
+                  <p className="text-yellow-200 text-sm font-medium">Guest Mode</p>
+                  <p className="text-yellow-300 text-xs">Data saved locally only</p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setShowAuth(true)}
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  Save Data
+                </Button>
+              </div>
+            </div>
+          )}
+          
           <Button
             variant="ghost"
             size="sm"
@@ -253,7 +455,7 @@ const Index = () => {
             className="text-slate-400 hover:text-white mt-2"
           >
             <LogOut className="h-4 w-4 mr-1" />
-            Sign Out
+            {isGuest ? 'Exit Guest Mode' : 'Sign Out'}
           </Button>
         </div>
 
