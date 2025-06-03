@@ -385,7 +385,7 @@ const Index = () => {
               <Button 
                 onClick={startGuestMode}
                 variant="outline"
-                className="w-full border-slate-600 text-slate-300 hover:bg-slate-700 py-3"
+                className="w-full border-slate-600 text-zinc-800 hover:bg-slate-700 py-3"
               >
                 Try as Guest
               </Button>
