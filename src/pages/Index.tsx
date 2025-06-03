@@ -351,6 +351,7 @@ const Index = () => {
   if (showGuestWelcome) {
     return <GuestWelcome onContinue={continueAsGuest} onSignUp={() => {
       setShowGuestWelcome(false);
+      setIsGuest(false);
       setShowAuth(true);
     }} />;
   }
