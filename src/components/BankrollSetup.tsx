@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Target, TrendingUp } from 'lucide-react';
+import { Spade, TrendingUp } from 'lucide-react';
 import { BankrollData } from '@/pages/Index';
 
 interface BankrollSetupProps {
@@ -39,8 +39,8 @@ const BankrollSetup = ({ onSetup, initialData }: BankrollSetupProps) => {
       <div className="max-w-md w-full">
         <Card className="p-6 bg-slate-800 border-slate-700">
           <div className="text-center mb-6">
-            <div className="mx-auto w-16 h-16 bg-green-600 rounded-full flex items-center justify-center mb-4">
-              <Target className="h-8 w-8 text-white" />
+            <div className="mx-auto w-16 h-16 bg-red-600 rounded-full flex items-center justify-center mb-4">
+              <Spade className="h-8 w-8 text-white" />
             </div>
             <h1 className="text-2xl font-bold text-white mb-2">
               {initialData ? 'Update Bankroll' : 'Setup Your Bankroll'}
@@ -81,7 +81,7 @@ const BankrollSetup = ({ onSetup, initialData }: BankrollSetupProps) => {
 
             <Button 
               type="submit" 
-              className="w-full bg-green-600 hover:bg-green-700 text-white py-3 text-lg font-semibold"
+              className="w-full bg-red-600 hover:bg-red-700 text-white py-3 text-lg font-semibold"
             >
               <TrendingUp className="h-5 w-5 mr-2" />
               {initialData ? 'Update Bankroll' : 'Start Tracking'}

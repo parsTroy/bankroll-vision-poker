@@ -3,11 +3,15 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { Plus, TrendingUp, TrendingDown, Target } from 'lucide-react';
+import { Plus, TrendingUp, Target, LogOut, Spade } from 'lucide-react';
 import SessionForm from '@/components/SessionForm';
 import SessionList from '@/components/SessionList';
 import Analytics from '@/components/Analytics';
 import BankrollSetup from '@/components/BankrollSetup';
+import Auth from '@/components/Auth';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 export interface Session {
   id: string;
@@ -28,54 +32,189 @@ export interface BankrollData {
 }
 
 const Index = () => {
+  const { user, loading, signOut } = useAuth();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [bankroll, setBankroll] = useState<BankrollData | null>(null);
   const [showSessionForm, setShowSessionForm] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [showBankrollSetup, setShowBankrollSetup] = useState(false);
+  const [loadingData, setLoadingData] = useState(true);
+  const { toast } = useToast();
 
+  // Load user data when authenticated
   useEffect(() => {
-    const savedSessions = localStorage.getItem('pokerSessions');
-    const savedBankroll = localStorage.getItem('pokerBankroll');
-    
-    if (savedSessions) {
-      setSessions(JSON.parse(savedSessions));
+    if (user) {
+      loadUserData();
     }
-    
-    if (savedBankroll) {
-      setBankroll(JSON.parse(savedBankroll));
-    }
-  }, []);
+  }, [user]);
 
-  const addSession = (session: Omit<Session, 'id' | 'profit'>) => {
-    const profit = session.cashOut - session.buyIn;
-    const newSession: Session = {
-      ...session,
-      id: Date.now().toString(),
-      profit
-    };
-    
-    const updatedSessions = [...sessions, newSession];
-    setSessions(updatedSessions);
-    localStorage.setItem('pokerSessions', JSON.stringify(updatedSessions));
-    
-    if (bankroll) {
-      const updatedBankroll = {
-        ...bankroll,
-        currentAmount: bankroll.currentAmount + profit
+  const loadUserData = async () => {
+    try {
+      setLoadingData(true);
+      
+      // Load sessions from Supabase
+      const { data: sessionsData, error: sessionsError } = await supabase
+        .from('sessions')
+        .select('*')
+        .order('date', { ascending: false });
+
+      if (sessionsError) throw sessionsError;
+
+      // Transform the data to match our interface
+      const transformedSessions = sessionsData?.map(session => ({
+        id: session.id,
+        date: session.date,
+        gameType: session.game_type as 'cash' | 'tournament',
+        stakes: session.stakes || '',
+        location: session.location,
+        buyIn: session.buy_in,
+        cashOut: session.cash_out || 0,
+        profit: session.profit || 0,
+        notes: session.notes || ''
+      })) || [];
+
+      setSessions(transformedSessions);
+
+      // Load bankroll data from profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('starting_bankroll, bankroll_goal')
+        .eq('id', user.id)
+        .single();
+
+      if (profileError && profileError.code !== 'PGRST116') {
+        throw profileError;
+      }
+
+      if (profileData?.starting_bankroll && profileData?.bankroll_goal) {
+        const totalProfit = transformedSessions.reduce((sum, session) => sum + session.profit, 0);
+        setBankroll({
+          startingAmount: profileData.starting_bankroll,
+          goalAmount: profileData.bankroll_goal,
+          currentAmount: profileData.starting_bankroll + totalProfit
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error loading data",
+        description: error.message,
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingData(false);
+    }
+  };
+
+  const addSession = async (sessionData: Omit<Session, 'id' | 'profit'>) => {
+    try {
+      const profit = sessionData.cashOut - sessionData.buyIn;
+      
+      const { data, error } = await supabase
+        .from('sessions')
+        .insert({
+          user_id: user?.id,
+          date: sessionData.date,
+          game_type: sessionData.gameType,
+          stakes: sessionData.stakes,
+          location: sessionData.location,
+          buy_in: sessionData.buyIn,
+          cash_out: sessionData.cashOut,
+          profit: profit,
+          notes: sessionData.notes
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      // Add to local state
+      const newSession: Session = {
+        id: data.id,
+        date: data.date,
+        gameType: data.game_type,
+        stakes: data.stakes || '',
+        location: data.location,
+        buyIn: data.buy_in,
+        cashOut: data.cash_out || 0,
+        profit: data.profit || 0,
+        notes: data.notes || ''
       };
-      setBankroll(updatedBankroll);
-      localStorage.setItem('pokerBankroll', JSON.stringify(updatedBankroll));
+
+      setSessions(prev => [newSession, ...prev]);
+
+      // Update bankroll
+      if (bankroll) {
+        const updatedBankroll = {
+          ...bankroll,
+          currentAmount: bankroll.currentAmount + profit
+        };
+        setBankroll(updatedBankroll);
+      }
+
+      setShowSessionForm(false);
+      toast({
+        title: "Session added!",
+        description: `${profit >= 0 ? 'Profit' : 'Loss'}: $${Math.abs(profit)}`
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error adding session",
+        description: error.message,
+        variant: "destructive"
+      });
     }
-    
-    setShowSessionForm(false);
   };
 
-  const setupBankroll = (data: BankrollData) => {
-    setBankroll(data);
-    localStorage.setItem('pokerBankroll', JSON.stringify(data));
-    setShowBankrollSetup(false);
+  const setupBankroll = async (data: BankrollData) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          starting_bankroll: data.startingAmount,
+          bankroll_goal: data.goalAmount
+        })
+        .eq('id', user?.id);
+
+      if (error) throw error;
+
+      setBankroll(data);
+      setShowBankrollSetup(false);
+      toast({
+        title: "Bankroll updated!",
+        description: "Your bankroll settings have been saved"
+      });
+    } catch (error: any) {
+      toast({
+        title: "Error updating bankroll",
+        description: error.message,
+        variant: "destructive"
+      });
+    }
   };
+
+  const handleSignOut = async () => {
+    await signOut();
+    setSessions([]);
+    setBankroll(null);
+    toast({
+      title: "Signed out",
+      description: "Come back soon!"
+    });
+  };
+
+  // Show loading while checking auth
+  if (loading || (user && loadingData)) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center">
+        <div className="text-white text-xl">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show auth if not logged in
+  if (!user) {
+    return <Auth onAuthSuccess={() => {}} />;
+  }
 
   const totalProfit = sessions.reduce((sum, session) => sum + session.profit, 0);
   const progressPercentage = bankroll ? 
@@ -102,8 +241,20 @@ const Index = () => {
       <div className="max-w-md mx-auto space-y-6">
         {/* Header */}
         <div className="text-center pt-6 pb-4">
-          <h1 className="text-3xl font-bold text-white mb-2">Poker Tracker</h1>
+          <div className="flex items-center justify-center mb-2">
+            <Spade className="h-8 w-8 text-red-500 mr-2" />
+            <h1 className="text-3xl font-bold text-white">Seven Deuce</h1>
+          </div>
           <p className="text-slate-400">Track your live poker journey</p>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleSignOut}
+            className="text-slate-400 hover:text-white mt-2"
+          >
+            <LogOut className="h-4 w-4 mr-1" />
+            Sign Out
+          </Button>
         </div>
 
         {/* Bankroll Overview */}
@@ -175,7 +326,7 @@ const Index = () => {
         <div className="space-y-3">
           <Button 
             onClick={() => setShowSessionForm(true)}
-            className="w-full bg-green-600 hover:bg-green-700 text-white py-6 text-lg font-semibold"
+            className="w-full bg-red-600 hover:bg-red-700 text-white py-6 text-lg font-semibold"
           >
             <Plus className="h-6 w-6 mr-2" />
             Add Session
@@ -191,7 +342,7 @@ const Index = () => {
         </div>
 
         {/* Recent Sessions */}
-        <SessionList sessions={sessions.slice(-5).reverse()} />
+        <SessionList sessions={sessions.slice(0, 5)} />
       </div>
     </div>
   );
