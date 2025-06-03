@@ -349,7 +349,10 @@ const Index = () => {
 
   // Show guest welcome screen
   if (showGuestWelcome) {
-    return <GuestWelcome onContinue={continueAsGuest} onSignUp={() => setShowAuth(true)} />;
+    return <GuestWelcome onContinue={continueAsGuest} onSignUp={() => {
+      setShowGuestWelcome(false);
+      setShowAuth(true);
+    }} />;
   }
 
   // Show auth if not logged in and not guest
