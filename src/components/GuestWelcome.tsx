@@ -2,6 +2,9 @@
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Spade, UserCheck, Play, AlertTriangle } from 'lucide-react';
+import { useState } from 'node_modules/react-resizable-panels/dist/declarations/src/vendor/react';
+
+const [showAuth, setShowAuth] = useState(false);
 
 interface GuestWelcomeProps {
   onContinue: () => void;
@@ -55,7 +58,7 @@ const GuestWelcome = ({ onContinue, onSignUp }: GuestWelcomeProps) => {
             </Button>
             
             <Button 
-              onClick={onSignUp}
+              onClick={() => setShowAuth(true)} 
               className="w-full bg-red-600 hover:bg-red-700 text-white py-3 text-lg font-semibold"
             >
               <UserCheck className="h-5 w-5 mr-2" />
