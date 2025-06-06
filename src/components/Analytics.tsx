@@ -1,8 +1,8 @@
-
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, TrendingUp, MapPin, Trophy } from 'lucide-react';
 import { Session, BankrollData } from '@/pages/Index';
+import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Tooltip } from 'recharts';
 
 interface AnalyticsProps {
   sessions: Session[];
@@ -16,6 +16,62 @@ const Analytics = ({ sessions, bankroll, onBack }: AnalyticsProps) => {
   const totalBuyIns = sessions.reduce((sum, session) => sum + session.buyIn, 0);
   const winRate = sessions.length > 0 ? (sessions.filter(s => s.profit > 0).length / sessions.length) * 100 : 0;
   
+  // Prepare chart data
+  const sessionsByDate = [...sessions]
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+    .map((session, index) => {
+      const runningTotal = sessions
+        .slice()
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+        .slice(0, index + 1)
+        .reduce((sum, s) => sum + s.profit, 0);
+      
+      return {
+        date: new Date(session.date).toLocaleDateString(),
+        profit: session.profit,
+        runningTotal,
+        shortDate: new Date(session.date).getMonth() + 1 + '/' + new Date(session.date).getDate()
+      };
+    });
+
+  // Win/Loss data for pie chart
+  const winLossData = [
+    { name: 'Wins', value: sessions.filter(s => s.profit > 0).length, color: '#10b981' },
+    { name: 'Losses', value: sessions.filter(s => s.profit < 0).length, color: '#ef4444' },
+    { name: 'Break Even', value: sessions.filter(s => s.profit === 0).length, color: '#6b7280' }
+  ].filter(item => item.value > 0);
+
+  // Monthly profit data
+  const monthlyData = sessions.reduce((acc, session) => {
+    const month = new Date(session.date).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    if (!acc[month]) {
+      acc[month] = { month, profit: 0, sessions: 0 };
+    }
+    acc[month].profit += session.profit;
+    acc[month].sessions += 1;
+    return acc;
+  }, {} as Record<string, { month: string; profit: number; sessions: number }>);
+
+  const monthlyChartData = Object.values(monthlyData)
+    .sort((a, b) => new Date('01 ' + a.month).getTime() - new Date('01 ' + b.month).getTime());
+
+  // Game type chart data
+  const gameTypeChartData = Object.values(sessions.reduce((acc, session) => {
+    const key = `${session.gameType}_${session.stakes}`;
+    if (!acc[key]) {
+      acc[key] = { 
+        name: session.stakes,
+        gameType: session.gameType === 'cash' ? 'Cash' : 'Tournament',
+        profit: 0, 
+        sessions: 0 
+      };
+    }
+    acc[key].profit += session.profit;
+    acc[key].sessions += 1;
+    return acc;
+  }, {} as Record<string, { name: string; gameType: string; profit: number; sessions: number }>))
+  .sort((a, b) => b.profit - a.profit);
+
   // Profit by location
   const locationStats = sessions.reduce((acc, session) => {
     if (!acc[session.location]) {
@@ -44,6 +100,23 @@ const Analytics = ({ sessions, bankroll, onBack }: AnalyticsProps) => {
     .sort((a, b) => b.profit - a.profit)[0];
 
   const avgSession = sessions.length > 0 ? totalProfit / sessions.length : 0;
+
+  // Custom tooltip for charts
+  const CustomTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-slate-700 p-2 rounded border border-slate-600 text-white text-sm">
+          <p className="text-slate-300">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <p key={index} style={{ color: entry.color }}>
+              {entry.name}: ${entry.value?.toLocaleString()}
+            </p>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 p-4">
@@ -90,6 +163,142 @@ const Analytics = ({ sessions, bankroll, onBack }: AnalyticsProps) => {
               </div>
             </div>
           </Card>
+
+          {/* Profit Over Time Chart */}
+          {sessions.length > 1 && (
+            <Card className="p-6 bg-slate-800 border-slate-700">
+              <h2 className="text-lg font-semibold text-white mb-4">Profit Over Time</h2>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={sessionsByDate}>
+                    <XAxis 
+                      dataKey="shortDate" 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                    />
+                    <YAxis 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Line 
+                      type="monotone" 
+                      dataKey="runningTotal" 
+                      stroke="#10b981" 
+                      strokeWidth={2}
+                      dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
+                      activeDot={{ r: 6, stroke: '#10b981', strokeWidth: 2 }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
+
+          {/* Win/Loss Distribution */}
+          {sessions.length > 0 && (
+            <Card className="p-6 bg-slate-800 border-slate-700">
+              <h2 className="text-lg font-semibold text-white mb-4">Win/Loss Distribution</h2>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={winLossData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={40}
+                      outerRadius={80}
+                      dataKey="value"
+                      label={({ name, value }) => `${name}: ${value}`}
+                      labelLine={false}
+                      fontSize={12}
+                      fill="#8884d8"
+                    >
+                      {winLossData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip 
+                      contentStyle={{ 
+                        backgroundColor: '#374151', 
+                        border: '1px solid #4b5563',
+                        borderRadius: '6px',
+                        color: 'white'
+                      }}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
+
+          {/* Monthly Performance */}
+          {monthlyChartData.length > 1 && (
+            <Card className="p-6 bg-slate-800 border-slate-700">
+              <h2 className="text-lg font-semibold text-white mb-4">Monthly Performance</h2>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={monthlyChartData}>
+                    <XAxis 
+                      dataKey="month" 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                    />
+                    <YAxis 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar 
+                      dataKey="profit" 
+                      fill="#3b82f6"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
+
+          {/* Game Type Performance */}
+          {gameTypeChartData.length > 1 && (
+            <Card className="p-6 bg-slate-800 border-slate-700">
+              <h2 className="text-lg font-semibold text-white mb-4">Performance by Game Type</h2>
+              <div className="h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={gameTypeChartData} layout="horizontal">
+                    <XAxis 
+                      type="number"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <YAxis 
+                      type="category"
+                      dataKey="name" 
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 12, fill: '#94a3b8' }}
+                      width={60}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar 
+                      dataKey="profit" 
+                      fill="#ef4444"
+                      radius={[0, 4, 4, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </Card>
+          )}
 
           {/* Best Performers */}
           {bestLocation && (
