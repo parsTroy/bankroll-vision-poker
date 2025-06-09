@@ -97,5 +97,11 @@
 
   body {
     @apply bg-background text-foreground;
+    background: linear-gradient(to bottom right, #0f172a, #1e293b);
+    min-height: 100vh;
+  }
+
+  html {
+    background: linear-gradient(to bottom right, #0f172a, #1e293b);
   }
 }
