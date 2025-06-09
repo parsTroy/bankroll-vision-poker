@@ -99,7 +99,7 @@
     background: linear-gradient(to bottom right, #0f172a, #1e293b);
     background-attachment: fixed;
     background-repeat: no-repeat;
-    background-size: 100% 100%;
+    background-size: 150% 150%;
     min-height: 100vh;
     min-height: 100dvh; /* Dynamic viewport height for mobile */
   }
@@ -115,16 +115,4 @@
     margin: 0;
     padding: 0;
   }
-
-  #root {
-    background-color: #0f172a;
-    min-height: 100vh;
-    min-height: 100dvh;
-  }
 } 
-
-#root {
-  background-color: #0f172a;
-  min-height: 100vh;
-  min-height: 100dvh;
-}
