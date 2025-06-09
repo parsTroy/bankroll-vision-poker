@@ -95,13 +95,34 @@
     @apply border-border;
   }
 
+  html {
+    background: linear-gradient(to bottom right, #0f172a, #1e293b);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    min-height: 100vh;
+    min-height: 100dvh; /* Dynamic viewport height for mobile */
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground;
     background: linear-gradient(to bottom right, #0f172a, #1e293b);
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
     min-height: 100vh;
+    min-height: 100dvh; /* Dynamic viewport height for mobile */
+    margin: 0;
+    padding: 0;
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+    -webkit-overflow-scrolling: touch;
   }
 
-  html {
-    background: linear-gradient(to bottom right, #0f172a, #1e293b);
+  #root {
+    background: transparent;
+    min-height: 100vh;
+    min-height: 100dvh;
   }
 }
